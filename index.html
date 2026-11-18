@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Builder Sandbox</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>AI Builder Sandbox</h1>
+      <p>A companion to the book <em>Learn AI by Building</em></p>
+    </div>
+    <div class="controls" role="toolbar" aria-label="Workspace controls">
+      <label class="inline">Example
+        <select id="example"></select>
+      </label>
+      <button type="button" class="btn" data-act="loadGood">Load working version</button>
+      <button type="button" class="btn warn" data-act="loadBroken">Load broken version</button>
+      <button type="button" class="btn ghost" data-act="export">Export JSON</button>
+      <button type="button" class="btn ghost" data-act="import">Import JSON</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden aria-label="Import workspace file">
+      <button type="button" class="btn ghost" data-act="reset">Reset</button>
+      <button type="button" class="btn ghost" data-act="showStart">Start here</button>
+      <div class="score" id="score" aria-live="polite">Test score: -</div>
+    </div>
+  </header>
+
+  <div class="banner" role="note">
+    <strong>This is a simulator, not a real AI model.</strong>
+    It follows fixed, documented rules, so the same settings and the same question always give the same answer.
+    That makes it a safe place to see what each part around a model does.
+  </div>
+
+  <section id="start" class="start" hidden aria-label="Start here"></section>
+
+  <main class="layout">
+    <section class="left" aria-label="Assistant settings">
+      <div class="tabs" id="tabs" role="tablist" aria-label="Parts of the assistant"></div>
+      <div id="tabpanel" class="tabpanel" role="tabpanel"></div>
+    </section>
+
+    <aside class="right" aria-label="Chat and inspector">
+      <div class="card" id="chatCard">
+        <h2>Chat <span class="sim-tag">simulated model</span></h2>
+        <div class="chips" id="chips" aria-label="Example questions"></div>
+        <div class="messages" id="messages" aria-live="polite"></div>
+        <form id="askForm" class="ask">
+          <label for="q" class="sr">Your question</label>
+          <input id="q" type="text" autocomplete="off" placeholder="Ask the assistant a question">
+          <button type="submit" class="btn">Ask</button>
+        </form>
+      </div>
+
+      <div class="card" id="cost" aria-label="Cost estimate"></div>
+
+      <div class="card">
+        <h2 id="viewTitle">Inspector</h2>
+        <div id="inspector"></div>
+      </div>
+
+      <details class="card how">
+        <summary>How the simulator decides</summary>
+        <ol>
+          <li><strong>Scope check (Guardrails).</strong> If the off-topic rule is on and the question matches a built-in off-topic word (poem, joke, recipe, and similar) or a "Forbidden topics" line in the instructions, a fixed refusal is sent and the model is not called. If the rule is off, the simulator answers anyway.</li>
+          <li><strong>Retrieval (Context).</strong> Documents are cut into chunks of whole sentences up to the chunk size. Each chunk is scored by how many of the question's words (after dropping filler words) it contains. The top-K chunks with enough overlap go into the folder.</li>
+          <li><strong>Memory.</strong> If memory is on, every saved note goes into the folder. The simulator reads three kinds of notes: <code>name: X</code>, an order id like ORD-9001, and the phrase "prefers email".</li>
+          <li><strong>Tools.</strong> An order id (ORD-1234) calls the order lookup. A price, cost or stock question that names a catalog product calls the price/stock lookup. A tool that is switched off is never called.</li>
+          <li><strong>Model.</strong> It answers only from the folder, in this order: refund, missing order, order status, price or stock, document sentences, and otherwise "I don't have that information". It never makes up facts. For documents it picks the sentence that matches the most question words, then adds more sentences only if they match at least two new words.</li>
+          <li><strong>Refunds (Guardrails).</strong> The model always proposes to approve a refund. If the refund guardrail is on, code checks the window (days) and the limit ($). Past the window it refuses. Over the limit it drafts the request for a human, or refuses if human approval is off. If the guardrail is off, the proposal goes straight through.</li>
+          <li><strong>Instructions (Context).</strong> The simulator reads four things from the text: whether it contains "cite", an email address to give when unsure, an "Allowed topics:" line, and a "Forbidden topics:" line. It does not understand the rest of the prose, which a real model would.</li>
+        </ol>
+      </details>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    Everything runs in your browser. Nothing is sent anywhere, and no account or API key is needed.
+    Your work is saved in this browser only; use Export JSON to keep a copy.
+  </footer>
+
+  <script src="js/util.js"></script>
+  <script src="js/retrieval.js"></script>
+  <script src="js/simulator.js"></script>
+  <script src="js/grader.js"></script>
+  <script src="js/workspaces.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
