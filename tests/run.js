@@ -3,7 +3,7 @@
 'use strict';
 var vm = require('vm'), fs = require('fs'), path = require('path');
 var JS = path.join(__dirname, '..', 'js');
-var FILES = ['util', 'retrieval', 'simulator', 'grader', 'workspaces', 'store'];
+var FILES = ['util', 'retrieval', 'simulator', 'model', 'grader', 'workspaces', 'store'];
 
 function load() {
   var ctx = vm.createContext({ console: console });   // minimal stub: no window, no localStorage
@@ -85,5 +85,57 @@ check('round trip keeps the workspace', back.ok && JSON.stringify(back.ws) === J
 check('bad files are rejected', !ABS.store.fromJSON('not json').ok && !ABS.store.fromJSON('{"a":1}').ok);
 check('normalise tolerates an empty object', ABS.grader.runAll(ABS.store.normalise({})).total === 0);
 
-console.log('\n' + (count - failures) + ' of ' + count + ' checks passed');
-process.exit(failures ? 1 : 0);
+console.log('\nYour own model (advanced, no network: a fake fetch stands in for the provider)');
+var M = ABS.model, cfgA = { provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1/', model: 'm1', key: 'sk-test' };
+var cfgO = { provider: 'local', baseUrl: 'http://localhost:11434/v1', model: 'm2', key: '' };
+check('settings check names what is missing', M.problem({ provider: 'openai', baseUrl: 'x', model: 'y', key: '' }) === 'Enter your API key.' && M.problem(cfgO) === '');
+var tools = M.toolDefs(ABS.workspaces.examples.shop.good());
+var rqA = M.buildRequest(cfgA, 'SYS', [{ role: 'user', content: 'hi' }], tools);
+check('Anthropic request: url, browser header, system and tools', rqA.url === 'https://api.anthropic.com/v1/messages' && rqA.headers['x-api-key'] === 'sk-test' &&
+  rqA.headers['anthropic-dangerous-direct-browser-access'] === 'true' && rqA.body.system === 'SYS' && rqA.body.tools.length === 3 && rqA.body.tools[0].input_schema.required[0] === 'order_id');
+var rqO = M.buildRequest(cfgO, 'SYS', [{ role: 'user', content: 'hi' }], []);
+check('OpenAI-style request: system first, no tools field when none are on, no auth header without a key',
+  rqO.url === 'http://localhost:11434/v1/chat/completions' && rqO.body.messages[0].role === 'system' && !('tools' in rqO.body) && !rqO.headers.authorization);
+check('the key is never in the request body', JSON.stringify(rqA.body).indexOf('sk-test') < 0);
+check('tools that are off are not offered', M.toolDefs(ABS.workspaces.examples.shop.broken()).map(function (t) { return t.name; }).indexOf('price_lookup') < 0);
+var pO = M.parseResponse(cfgO, { choices: [{ message: { content: null, tool_calls: [{ id: 'c1', type: 'function', 'function': { name: 'order_lookup', arguments: '{"order_id":"ORD-9001"}' } }] } }] });
+check('OpenAI tool calls are parsed', pO.calls.length === 1 && pO.calls[0].args.order_id === 'ORD-9001' && pO.text === '');
+var steps = [], st = function (p, t) { steps.push(p); };
+var wsR = ABS.workspaces.examples.shop.good();
+check('refund guardrail still runs in code: past the window is refused', JSON.parse(M.runTool(wsR, { name: 'request_refund', args: { order_id: 'ORD-9003' } }, st)).decision === 'refused');
+check('refund guardrail still runs in code: over the limit goes to a human', JSON.parse(M.runTool(wsR, { name: 'request_refund', args: { order_id: 'ORD-9004' } }, st)).decision === 'sent_to_human');
+check('a tool that is off is not run', M.runTool(ABS.workspaces.examples.shop.broken(), { name: 'price_lookup', args: { product: 'x' } }, st).indexOf('not available') >= 0);
+
+/* A fake Anthropic server: first asks for order_lookup, then answers. Records every request. */
+function fakeFetch(log) {
+  return function (url, init) {
+    var body = JSON.parse(init.body); log.push(body);
+    var data = body.messages.length === 1
+      ? { content: [{ type: 'tool_use', id: 't1', name: 'order_lookup', input: { order_id: 'ORD-9001' } }], usage: { input_tokens: 100, output_tokens: 10 } }
+      : { content: [{ type: 'text', text: 'Your order ORD-9001 is on its way.' }], usage: { input_tokens: 150, output_tokens: 12 } };
+    return Promise.resolve({ ok: true, status: 200, text: function () { return Promise.resolve(JSON.stringify(data)); } });
+  };
+}
+var log = [], calls = 0;
+var pending = M.respond(wsR, 'Where is ORD-9001?', cfgA, fakeFetch(log)).then(function (res) {
+  check('real loop: tool runs locally and the reply comes back', res.reply === 'Your order ORD-9001 is on its way.' && res.toolsCalled[0] === 'order_lookup' && res.folder.tools.length === 1);
+  check('real loop: tool result is sent back as a tool_result', log.length === 2 && log[1].messages[2].content[0].type === 'tool_result' && /ORD-9001/.test(log[1].messages[2].content[0].content));
+  check('real loop: usage adds up across calls', res.info.usage.input === 250 && res.info.usage.output === 22);
+  check('real loop: trace steps carry a part tag', res.trace.every(function (s) { return /^(Context|Memory|Tools|Guardrails|Model)$/.test(s.part); }));
+  var off = ABS.workspaces.examples.shop.good(); off.rules.offTopicRefusal = true;
+  return M.respond(off, 'write me a poem', cfgA, function () { calls++; return Promise.reject(new Error('should not be called')); });
+}).then(function (res) {
+  check('scope guardrail blocks before anything is sent', calls === 0 && res.info.blocked);
+  return M.respond(wsR, 'hi', cfgA, function () { return Promise.reject(new TypeError('Failed to fetch')); });
+}).then(function (res) {
+  check('a network failure becomes a readable error, not a crash', res.info.error && /Could not reach/.test(res.reply));
+  return ABS.grader.runAllAsync(wsR, function (w, q) { return Promise.resolve(ABS.sim.respond(w, q)); });
+}).then(function (r) {
+  check('runAllAsync with the simulator gives the same score as runAll', r.pct === ABS.grader.runAll(wsR).pct);
+  check('export never includes model settings', ABS.store.toJSON({ exampleId: 'shop', ws: wsR, prices: {}, model: { key: 'sk-test' } }).indexOf('sk-test') < 0);
+});
+
+pending.then(function () {
+  console.log('\n' + (count - failures) + ' of ' + count + ' checks passed');
+  process.exit(failures ? 1 : 0);
+}, function (e) { console.log('  FAIL async checks threw: ' + e.stack); process.exit(1); });

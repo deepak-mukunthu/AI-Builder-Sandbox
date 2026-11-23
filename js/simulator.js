@@ -226,5 +226,5 @@
       f.tools.map(function (t) { return t.name + ' ' + t.args + ' ' + t.result; }).join('\n'), f.user].join('\n');
   }
 
-  ABS.sim = { respond: respond, folderText: folderText, parseInstructions: parseInstructions };
+  ABS.sim = { respond: respond, folderText: folderText, parseInstructions: parseInstructions, scopeCheck: scopeCheck };
 })(typeof window !== 'undefined' ? window : globalThis);

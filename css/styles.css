@@ -128,3 +128,12 @@ table.tests { table-layout: fixed; }
 table.tests th:nth-child(1) { width: 58px; } table.tests th:nth-child(2) { width: 33%; }
 table.tests th:nth-child(5) { width: 130px; } table.tests th:nth-child(6) { width: 96px; }
 table.tests input, table.tests select { padding: 5px 6px; }
+
+/* Advanced: use your own model */
+details.byom > summary { padding: 0; }
+.byom .warnbox { background: var(--warn-bg); border: 1px solid #f0d49b; color: #5c3a00; border-radius: 8px; padding: 8px 10px; margin: 10px 0; font-size: 12.5px; }
+.byom .warnbox ul { margin: 4px 0 0; padding-left: 18px; }
+.byom input[type=password] { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid #b9c6dd; border-radius: 6px; }
+.real-tag { background: #ffe1df; color: var(--bad); }
+.banner.real { background: #fff1e0; border-bottom-color: #f0c48b; color: #5c3a00; }
+.msg.err { background: var(--bad-bg); border: 1px solid #f1b8b3; color: var(--bad); align-self: flex-start; }

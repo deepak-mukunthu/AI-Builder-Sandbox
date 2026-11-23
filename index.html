@@ -27,7 +27,7 @@
     </div>
   </header>
 
-  <div class="banner" role="note">
+  <div class="banner" id="banner" role="note">
     <strong>This is a simulator, not a real AI model.</strong>
     It follows fixed, documented rules, so the same settings and the same question always give the same answer.
     That makes it a safe place to see what each part around a model does.
@@ -43,7 +43,7 @@
 
     <aside class="right" aria-label="Chat and inspector">
       <div class="card" id="chatCard">
-        <h2>Chat <span class="sim-tag">simulated model</span></h2>
+        <h2>Chat <span class="sim-tag" id="chatTag">simulated model</span></h2>
         <div class="chips" id="chips" aria-label="Example questions"></div>
         <div class="messages" id="messages" aria-live="polite"></div>
         <form id="askForm" class="ask">
@@ -52,6 +52,11 @@
           <button type="submit" class="btn">Ask</button>
         </form>
       </div>
+
+      <details class="card byom" id="byom">
+        <summary>Advanced: use your own model <span class="sim-tag" id="byomTag">off</span></summary>
+        <div id="byomBody"></div>
+      </details>
 
       <div class="card" id="cost" aria-label="Cost estimate"></div>
 
@@ -77,12 +82,14 @@
 
   <footer class="foot">
     Everything runs in your browser. Nothing is sent anywhere, and no account or API key is needed.
+    The one exception is the optional "use your own model" mode, which sends questions to the provider you choose, only while you have it switched on.
     Your work is saved in this browser only; use Export JSON to keep a copy.
   </footer>
 
   <script src="js/util.js"></script>
   <script src="js/retrieval.js"></script>
   <script src="js/simulator.js"></script>
+  <script src="js/model.js"></script>
   <script src="js/grader.js"></script>
   <script src="js/workspaces.js"></script>
   <script src="js/store.js"></script>

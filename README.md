@@ -8,6 +8,8 @@ It is a **simulator**. The "model" is a set of fixed, documented rules, not a re
 - Plain HTML, CSS and JavaScript. No modules, no CDN, no web fonts.
 - Everything runs in your browser. Nothing is sent anywhere.
 
+All three stay true unless you switch on the optional advanced mode, [Use your own model](#use-your-own-model-advanced), which sends questions to a provider you choose.
+
 ![Start screen](docs/screenshot-start.png)
 
 ![A broken ShopBot, with the hints and the inspector](docs/screenshot-broken-shopbot.png)
@@ -99,6 +101,35 @@ Token estimates are characters divided by 4. Prices default to $3 and $15 per mi
 - The sample companies, policies, orders and prices are fictional.
 - Data is saved in your browser's local storage. Clearing site data removes it, so use Export JSON for anything you want to keep.
 
+## Use your own model (advanced)
+
+For readers who write code and want to see the same five parts around a real model. It is off by default, and nothing in the guided exercises needs it.
+
+Open **Advanced: use your own model** in the right-hand column, pick a provider, enter a model name and an API key, and tick **Send chat questions to this model**.
+
+| Provider | Base URL | Key |
+|---|---|---|
+| Anthropic (Claude) | `https://api.anthropic.com/v1` | required |
+| OpenAI | `https://api.openai.com/v1` | required |
+| OpenAI-compatible: Ollama, LM Studio, OpenRouter and similar | for example `http://localhost:11434/v1` | often not needed locally |
+
+What stays the same:
+
+- The folder is built the same way: your instructions, the retrieved chunks and the memory notes become the system prompt, and the question is the user message. Like the simulator, each question is sent on its own, with no chat history.
+- The scope guardrail runs first, in code. If it blocks a question, nothing is sent.
+- Only the tools switched on in tab 4 are offered. When the model calls one, it runs in your browser against the tab 4 data. Refunds go through a `request_refund` tool, and code checks the window and limit before replying, exactly as with the simulator.
+- The inspector shows the folder, the trace (each tool call the model chose, each guardrail check) and the exact request body sent on the first call.
+
+What changes:
+
+- Your question, instructions, retrieved chunks, memory notes and tool results are sent to the provider, and the provider bills you.
+- Replies vary from run to run. **Run tests with your model** on tab 5 sends every test question, one at a time, after a confirmation. The must-include words were written for the simulator, so a good real reply can still fail a check. Read the trace before changing anything.
+- The cost strip uses the token counts the provider reports. Set the prices to your model's real rates.
+
+Your key is kept in the page's memory only. It is never written to local storage, never included in Export JSON, and is gone when you reload. A reload also switches the mode off. Only the provider, base URL and model name are remembered. Even so, a key typed into a web page can be read by anything else running in that page, so use a key with a low spending limit, and not on a shared computer.
+
+Browser calls need the provider to allow them (CORS). Anthropic allows it through the `anthropic-dangerous-direct-browser-access` header, which the sandbox sends. For a local server, allow web page origins; for Ollama, set `OLLAMA_ORIGINS`. If a call fails, the reply and the trace say why.
+
 ## Export, import, reset
 
 - **Export JSON** downloads the whole workspace (instructions, documents, memory, tools, rules, tests, prices).
@@ -111,7 +142,7 @@ Token estimates are characters divided by 4. Prices default to $3 and $15 per mi
 node tests/run.js
 ```
 
-The script loads the files in `js/` into a Node `vm` context and checks that: each working example scores 100%, each broken example scores low, every documented fix raises the score, the final score is 100%, two separate loads give identical results, and the token counter never returns NaN.
+The script loads the files in `js/` into a Node `vm` context and checks that: each working example scores 100%, each broken example scores low, every documented fix raises the score, the final score is 100%, two separate loads give identical results, and the token counter never returns NaN. The "your own model" checks use a fake provider, so they make no network calls.
 
 ## Publish on GitHub Pages
 
@@ -130,6 +161,7 @@ css/styles.css      styles
 js/util.js          small helpers
 js/retrieval.js     chunking and keyword retrieval
 js/simulator.js     the rule-based simulated model
+js/model.js         optional: your own model, tool loop, request builders
 js/grader.js        test runner and scoring
 js/workspaces.js    the two example workspaces, their broken versions and fixes
 js/store.js         local storage, export and import

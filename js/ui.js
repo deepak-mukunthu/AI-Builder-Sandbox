@@ -1,7 +1,7 @@
 /* The page: tabs, chat, inspector, cost strip. Plain DOM code, no framework. */
 (function (g) {
   'use strict';
-  var ABS = g.ABS, U = ABS.util, WS = ABS.workspaces, S = ABS.store;
+  var ABS = g.ABS, U = ABS.util, WS = ABS.workspaces, S = ABS.store, M = ABS.model;
   var esc = U.esc, $ = function (id) { return document.getElementById(id); };
 
   var TABS = [
@@ -13,7 +13,10 @@
   ];
 
   var state = { exampleId: 'hr', ws: null, prices: U.clone(S.DEFAULT_PRICES), tab: 1,
-                chat: [], lastTurn: null, view: null, results: null };
+                chat: [], lastTurn: null, view: null, results: null,
+                /* Advanced mode. on and key live only in this page's memory. */
+                model: { on: false, provider: 'anthropic', baseUrl: M.PRESETS.anthropic.baseUrl, model: M.PRESETS.anthropic.model, key: '' },
+                busy: false };
 
   /* ---------- helpers ---------- */
   function getPath(path) { return path.split('.').reduce(function (o, k) { return o == null ? o : o[k]; }, state); }
@@ -29,10 +32,11 @@
   function partTag(part) { return '<span class="tag part-' + part + '">' + part + '</span>'; }
 
   function persist() { S.save(state); }
-  function recompute() {
-    state.results = ABS.grader.runAll(state.ws);
-    var sc = $('score'), r = state.results;
-    sc.textContent = 'Test score: ' + r.pct + '% (' + r.passed + ' of ' + r.total + ')';
+  function recompute() { showScore(ABS.grader.runAll(state.ws)); }
+  function showScore(r) {
+    state.results = r;
+    var sc = $('score');
+    sc.textContent = (r.real ? 'Your model: ' : state.model.on ? 'Simulator score: ' : 'Test score: ') + r.pct + '% (' + r.passed + ' of ' + r.total + ')';
     sc.className = 'score ' + (r.total && r.passed === r.total ? 'good' : r.pct < 50 ? 'bad' : 'mid');
     updateTestRows();
   }
@@ -140,7 +144,11 @@
         '<button type="button" class="btn danger small" data-act="delTest" data-i="' + i + '" aria-label="Delete test ' + (i + 1) + '">x</button></td></tr>';
     }).join('');
     return panelHead('Test', 'Tests', 'A test sheet is a list of questions with the words a good answer must and must not contain. Run it after every change so you see what each change did. The score updates as you edit.') +
-      '<div class="row"><button type="button" class="btn" data-act="runAll">Run all tests</button><span id="scoreLine" class="scoreline"></span></div>' +
+      '<div class="row"><button type="button" class="btn" data-act="runAll">Run all tests</button>' +
+      (state.model.on ? '<button type="button" class="btn warn" data-act="runReal"' + (state.busy ? ' disabled' : '') + '>Run tests with your model</button>' : '') +
+      '<span id="scoreLine" class="scoreline"></span></div>' +
+      (state.model.on ? '<p class="note">"Run all tests" uses the simulator. "Run tests with your model" sends every question to ' + esc(state.model.model) +
+        ', one at a time. Real replies vary from run to run, and word checks written for the simulator can fail on a reply that is fine. Read the trace before you change anything.</p>' : '') +
       '<table class="grid tests"><thead><tr><th>Result</th><th>Question</th><th>Must include</th><th>Must not include</th><th>Expected tool</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<button type="button" class="btn small" data-act="addTest">Add test</button>' +
       '<details class="box" id="hints"><summary>Hints: which part to check for each failing test</summary><div id="hintList"></div></details>' +
@@ -156,7 +164,8 @@
         if (el) { el.textContent = it.pass ? 'Pass' : 'Fail'; el.className = 'pill ' + (it.pass ? 'pass' : 'fail'); }
       });
       var sl = $('scoreLine');
-      if (sl) sl.textContent = 'Score: ' + r.pct + '% (' + r.passed + ' of ' + r.total + ' pass)';
+      if (sl) sl.textContent = (r.real ? 'Your model (' + r.model + '): ' : 'Score: ') + r.pct + '% (' + r.passed + ' of ' + r.total + ' pass)' +
+        (r.real ? '. Edit anything and the score goes back to the simulator.' : '');
       var hl = $('hintList');
       if (hl) {
         var fails = r.items.map(function (it, i) { return { it: it, i: i }; }).filter(function (x) { return !x.it.pass; });
@@ -185,19 +194,110 @@
   }
   function renderChat() {
     $('messages').innerHTML = state.chat.length ? state.chat.map(function (m) {
-      return '<div class="msg ' + m.role + '"><span class="who">' + (m.role === 'user' ? 'You' : 'Simulated assistant') + '</span>' + esc(m.text) + '</div>';
-    }).join('') : '<p class="note">Ask a question, or click one of the examples above. Replies come from fixed rules, not a real model.</p>';
+      return '<div class="msg ' + m.role + '"><span class="who">' + esc(m.who || (m.role === 'user' ? 'You' : 'Simulated assistant')) + '</span>' + esc(m.text) + '</div>';
+    }).join('') : '<p class="note">' + (state.model.on ? 'Ask a question. It goes to your model, ' + esc(state.model.model) + ', with the same folder the simulator would get.'
+      : 'Ask a question, or click one of the examples above. Replies come from fixed rules, not a real model.') + '</p>';
     $('messages').scrollTop = $('messages').scrollHeight;
   }
 
   function ask(q) {
     q = U.trim(q);
-    if (!q) return;
-    var res = ABS.sim.respond(state.ws, q);
-    state.chat.push({ role: 'user', text: q }, { role: 'bot', text: res.reply });
+    if (!q || state.busy) return;
+    if (!state.model.on) { showTurn(q, ABS.sim.respond(state.ws, q), { role: 'bot', text: '' }); return; }
+    var who = 'Your model (' + U.trim(state.model.model) + ')', msg = { role: 'bot', who: who, text: 'Waiting for the reply...' };
+    state.chat.push({ role: 'user', text: q }, msg);
+    setBusy(true); renderChat();
+    M.respond(U.clone(state.ws), q, state.model).then(function (res) {
+      setBusy(false);
+      state.chat.pop(); state.chat.pop();
+      showTurn(q, res, { role: res.info.error ? 'err' : 'bot', who: who, text: '' });
+    });
+  }
+  function showTurn(q, res, msg) {
+    msg.text = res.reply;
+    state.chat.push({ role: 'user', text: q }, msg);
     state.lastTurn = res;
     state.view = { label: 'Last answer', res: res, checks: null };
     renderChat(); renderInspector(); renderCost(); renderLastRetrieval();
+  }
+  function setBusy(b) {
+    state.busy = b;
+    $('askForm').querySelector('button').disabled = b;
+    var rb = document.querySelector('[data-act=runReal]');
+    if (rb) rb.disabled = b;
+  }
+
+  /* ---------- advanced: your own model ---------- */
+  function renderModel() {
+    var m = state.model, p = M.PRESETS[m.provider] || M.PRESETS.anthropic;
+    $('byomTag').textContent = m.on ? 'on' : 'off';
+    $('byomTag').className = 'sim-tag' + (m.on ? ' real-tag' : '');
+    $('byomBody').innerHTML =
+      '<p class="note">For readers who write code. The simulator stays the default. Switch this on to send the same folder to a real model and compare.</p>' +
+      '<div class="warnbox"><b>What changes when this is on</b><ul>' +
+      '<li>Each question, your instructions, the retrieved chunks, memory notes and tool results are sent to the provider below. It bills your account.</li>' +
+      '<li>Your key stays in this page only. It is not saved, not exported, and is gone when you reload. Use a key with a low spending limit, and not on a shared computer.</li>' +
+      '<li>Tools still run here, against the data in tab 4. The scope and refund rules are still checked in code, outside the model.</li></ul></div>' +
+      '<label>Provider<select ' + field('model.provider', 'text') + '>' + Object.keys(M.PRESETS).map(function (k) {
+        return '<option value="' + k + '"' + (m.provider === k ? ' selected' : '') + '>' + esc(M.PRESETS[k].label) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Base URL<input type="text" spellcheck="false" ' + field('model.baseUrl', 'text') + '></label>' +
+      '<label>Model name<input type="text" spellcheck="false" placeholder="the model id from your provider" ' + field('model.model', 'text') + '></label>' +
+      '<label>API key' + (p.needsKey ? '' : ' (often not needed for a local server)') +
+      '<input type="password" autocomplete="off" spellcheck="false" ' + field('model.key', 'text') + '></label>' +
+      '<label class="check"><input type="checkbox" ' + field('model.on', 'bool') + '> Send chat questions to this model</label>' +
+      '<p class="note" id="byomMsg"></p>';
+  }
+  function updateMode() {
+    var on = state.model.on, name = esc(U.trim(state.model.model));
+    $('banner').className = 'banner' + (on ? ' real' : '');
+    $('banner').innerHTML = on
+      ? '<strong>Your own model is on (' + name + ').</strong> Questions and the folder are sent to ' + esc(U.trim(state.model.baseUrl)) +
+        '. Replies can differ every time. Untick "Send chat questions to this model" to go back to the simulator.'
+      : '<strong>This is a simulator, not a real AI model.</strong> It follows fixed, documented rules, so the same settings and the same question always give the same answer. That makes it a safe place to see what each part around a model does.';
+    $('chatTag').textContent = on ? 'your model: ' + U.trim(state.model.model) : 'simulated model';
+    $('chatTag').className = 'sim-tag' + (on ? ' real-tag' : '');
+    $('byomTag').textContent = on ? 'on' : 'off';
+    $('byomTag').className = 'sim-tag' + (on ? ' real-tag' : '');
+    renderChat(); recompute();
+    if (state.tab === 5) renderPanel();
+  }
+  function onModelField(path) {
+    var m = state.model, msg = $('byomMsg');
+    if (path === 'model.provider') {
+      var p = M.PRESETS[m.provider];
+      m.baseUrl = p.baseUrl; m.model = p.model; m.on = false;
+      renderModel();
+    }
+    if (path === 'model.on' && m.on) {
+      var why = M.problem(m);
+      if (why) { m.on = false; document.querySelector('[data-path="model.on"]').checked = false; msg.textContent = why; return; }
+    }
+    if (msg) msg.textContent = '';
+    if (path !== 'model.key') S.saveModel(m);
+    if (m.on && M.problem(m)) { m.on = false; renderModel(); }
+    updateMode();
+  }
+  function runReal() {
+    var n = state.ws.tests.length, cfg = state.model;
+    if (!n || state.busy) return;
+    if (!confirm('Send all ' + n + ' test questions to ' + U.trim(cfg.model) + '? Your provider bills each one, and replies vary from run to run.')) return;
+    setBusy(true);
+    var ws = U.clone(state.ws);
+    ABS.grader.runAllAsync(ws, function (w, q) {
+      return M.respond(w, q, cfg).then(function (res) { return res.info.error ? Promise.reject(new Error(res.reply)) : res; });
+    }, function (i, total) {
+      var sl = $('scoreLine');
+      if (sl) sl.textContent = 'Your model: running test ' + (i + 1) + ' of ' + total + '...';
+    }).then(function (r) {
+      setBusy(false);
+      r.real = true; r.model = U.trim(cfg.model);
+      showScore(r);
+    }, function (e) {
+      setBusy(false);
+      recompute();
+      var sl = $('scoreLine');
+      if (sl) sl.textContent = 'Stopped. ' + e.message;
+    });
   }
 
   function renderInspector() {
@@ -214,22 +314,26 @@
       sec('Model', 'User message', '<pre>' + esc(f.user) + '</pre>');
     var trace = '<ol class="trace">' + v.res.trace.map(function (s) { return '<li>' + partTag(s.part) + ' ' + esc(s.text) + '</li>'; }).join('') + '</ol>';
     var checks = v.checks ? '<div class="box"><b>Test checks</b><ul>' + v.checks.map(function (c) { return '<li class="' + (c.ok ? 'okc' : 'badc') + '">' + (c.ok ? 'Pass: ' : 'Fail: ') + esc(c.label) + '</li>'; }).join('') + '</ul></div>' : '';
-    el.innerHTML = '<div class="reply"><span class="who">Reply</span>' + esc(v.res.reply) + '</div>' + checks +
+    var sent = f.request ? '<details><summary>Exact request body sent to your model (first call, the key is not shown)</summary><pre>' +
+      esc(JSON.stringify(f.request, null, 2)) + '</pre></details>' : '';
+    el.innerHTML = '<div class="reply"><span class="who">' + (v.res.info && v.res.info.real ? 'Reply from your model' : 'Reply') + '</span>' + esc(v.res.reply) + '</div>' + checks +
       '<details open><summary>What the model was handed</summary>' + folder + '</details>' +
-      '<details open><summary>Step by step trace</summary>' + trace + '</details>';
+      '<details open><summary>Step by step trace</summary>' + trace + '</details>' + sent;
   }
 
   function renderCost() {
     var p = state.prices, t = state.lastTurn;
-    var inTok = t ? U.estimateTokens(ABS.sim.folderText(t.folder)) : 0, outTok = t ? U.estimateTokens(t.reply) : 0;
+    var used = t && t.info && t.info.real && t.info.usage && t.info.usage.input ? t.info.usage : null;
+    var inTok = used ? used.input : t ? U.estimateTokens(ABS.sim.folderText(t.folder)) : 0, outTok = used ? used.output : t ? U.estimateTokens(t.reply) : 0;
     var cost = inTok / 1e6 * U.num(p.inM, 0) + outTok / 1e6 * U.num(p.outM, 0);
     $('cost').innerHTML = '<h2>Cost estimate <span class="sim-tag">example prices</span></h2>' +
       '<div class="row"><label>Input $ per million tokens<input type="number" min="0" step="0.1" ' + field('prices.inM', 'num') + '></label>' +
       '<label>Output $ per million tokens<input type="number" min="0" step="0.1" ' + field('prices.outM', 'num') + '></label></div>' +
-      (t ? '<p class="costline">Last turn: about <b>' + inTok + '</b> input tokens (everything in the folder) and <b>' + outTok + '</b> output tokens. ' +
+      (t ? '<p class="costline">Last turn: ' + (used ? '' : 'about ') + '<b>' + inTok + '</b> input tokens (' + (used ? 'reported by your provider' : 'everything in the folder') + ') and <b>' + outTok + '</b> output tokens. ' +
         'Cost per turn: <b>$' + cost.toFixed(5) + '</b>. Per 1,000 turns: <b>$' + (cost * 1000).toFixed(2) + '</b>.</p>'
         : '<p class="note">Ask a question to see an estimate.</p>') +
-      '<p class="note">Tokens are estimated as characters divided by 4. Prices are examples, not a quote for any real model.</p>';
+      '<p class="note">' + (used ? 'Token counts for the last turn were reported by your provider, across all its calls. Set the prices to your model\'s real rates.'
+        : 'Tokens are estimated as characters divided by 4. Prices are examples, not a quote for any real model.') + '</p>';
   }
 
   /* ---------- start panel ---------- */
@@ -279,6 +383,7 @@
     addTest: function () { state.ws.tests.push({ q: '', include: '', exclude: '', tool: '', hint: '' }); changed(); renderPanel(); renderChips(); },
     delTest: function (d) { state.ws.tests.splice(Number(d.i), 1); changed(); renderPanel(); renderChips(); },
     runAll: function () { recompute(); renderPanel(); },
+    runReal: function () { runReal(); },
     trace: function (d) {
       var i = Number(d.i), it = state.results && state.results.items[i];
       if (!it) return;
@@ -305,6 +410,9 @@
     if (saved) { state.exampleId = saved.exampleId; state.ws = saved.ws; state.prices = saved.prices; afterLoad(); }
     else loadExample('hr', 'good');
     renderStart(!S.seenStart());
+    var mc = S.loadModel();
+    if (mc && M.PRESETS[mc.provider]) { state.model.provider = mc.provider; state.model.baseUrl = mc.baseUrl; state.model.model = mc.model; }
+    renderModel();
 
     document.addEventListener('click', function (e) {
       var b = e.target.closest('[data-act]');
@@ -316,6 +424,11 @@
       var t = el.dataset.type;
       setPath(el.dataset.path, t === 'bool' ? el.checked : t === 'num' ? U.num(el.value, 0) : el.value);
       if (el.dataset.path.indexOf('prices.') === 0) { persist(); renderCost(); return; }
+      if (el.dataset.path.indexOf('model.') === 0) {
+        /* Checkboxes and selects fire both events; text fields act as you type. */
+        if ((e.type === 'change') === (el.type === 'checkbox' || el.tagName === 'SELECT')) onModelField(el.dataset.path);
+        return;
+      }
       changed();
       if (el.dataset.path.indexOf('ws.tests.') === 0 && /\.q$/.test(el.dataset.path)) renderChips();
     }

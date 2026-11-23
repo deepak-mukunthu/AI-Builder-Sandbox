@@ -5,6 +5,7 @@
   var U = ABS.util;
   var KEY = 'ai-builder-sandbox.v1';
   var SEEN = 'ai-builder-sandbox.seen-start';
+  var MODEL = 'ai-builder-sandbox.model';
 
   var DEFAULT_PRICES = { inM: 3, outM: 15 };
 
@@ -51,6 +52,18 @@
   function seenStart() { try { return localStorage.getItem(SEEN) === '1'; } catch (e) { return false; } }
   function markSeen(v) { try { localStorage.setItem(SEEN, v ? '1' : '0'); } catch (e) { /* ignore */ } }
 
+  /* Advanced real-model settings. Only the provider, base URL and model name are kept.
+     The API key and the on/off switch are never written anywhere, so a reload always returns to the simulator. */
+  function saveModel(m) {
+    try { localStorage.setItem(MODEL, JSON.stringify({ provider: m.provider, baseUrl: m.baseUrl, model: m.model })); } catch (e) { /* ignore */ }
+  }
+  function loadModel() {
+    try {
+      var o = JSON.parse(localStorage.getItem(MODEL) || 'null');
+      return o && typeof o === 'object' ? { provider: String(o.provider || ''), baseUrl: String(o.baseUrl || ''), model: String(o.model || '') } : null;
+    } catch (e) { return null; }
+  }
+
   function toJSON(state) {
     return JSON.stringify({ app: 'ai-builder-sandbox', version: 1, exampleId: state.exampleId, prices: state.prices, workspace: state.ws }, null, 2);
   }
@@ -64,5 +77,6 @@
   }
 
   ABS.store = { normalise: normalise, save: save, load: load, clear: clear, seenStart: seenStart, markSeen: markSeen,
+                saveModel: saveModel, loadModel: loadModel,
                 toJSON: toJSON, fromJSON: fromJSON, DEFAULT_PRICES: DEFAULT_PRICES };
 })(typeof window !== 'undefined' ? window : globalThis);
