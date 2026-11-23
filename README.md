@@ -117,7 +117,7 @@ What stays the same:
 
 - The folder is built the same way: your instructions, the retrieved chunks and the memory notes become the system prompt, and the question is the user message. Like the simulator, each question is sent on its own, with no chat history.
 - The scope guardrail runs first, in code. If it blocks a question, nothing is sent.
-- Only the tools switched on in tab 4 are offered. When the model calls one, it runs in your browser against the tab 4 data. Refunds go through a `request_refund` tool, and code checks the window and limit before replying, exactly as with the simulator.
+- Only the tools switched on in tab 4 are offered. When the model calls one, it runs in your browser against the tab 4 data. Refunds go through a `request_refund` tool, which looks up the order itself and checks the window and limit in code before the model sees the decision, exactly as with the simulator.
 - The inspector shows the folder, the trace (each tool call the model chose, each guardrail check) and the exact request body sent on the first call.
 
 What changes:
@@ -128,7 +128,7 @@ What changes:
 
 Your key is kept in the page's memory only. It is never written to local storage, never included in Export JSON, and is gone when you reload. A reload also switches the mode off. Only the provider, base URL and model name are remembered. Even so, a key typed into a web page can be read by anything else running in that page, so use a key with a low spending limit, and not on a shared computer.
 
-Browser calls need the provider to allow them (CORS). Anthropic allows it through the `anthropic-dangerous-direct-browser-access` header, which the sandbox sends. For a local server, allow web page origins; for Ollama, set `OLLAMA_ORIGINS`. If a call fails, the reply and the trace say why.
+Browser calls need the provider to allow them (CORS). Ollama refuses pages opened from `file://`, so serve the folder (`python3 -m http.server`) and open the `localhost` address instead. Anthropic allows it through the `anthropic-dangerous-direct-browser-access` header, which the sandbox sends. For a local server, allow web page origins; for Ollama, set `OLLAMA_ORIGINS`. If a call fails, the reply and the trace say why.
 
 ## Export, import, reset
 

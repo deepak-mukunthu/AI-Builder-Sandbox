@@ -86,17 +86,17 @@ check('bad files are rejected', !ABS.store.fromJSON('not json').ok && !ABS.store
 check('normalise tolerates an empty object', ABS.grader.runAll(ABS.store.normalise({})).total === 0);
 
 console.log('\nYour own model (advanced, no network: a fake fetch stands in for the provider)');
-var M = ABS.model, cfgA = { provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1/', model: 'm1', key: 'sk-test' };
+var M = ABS.model, cfgA = { provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1/', model: 'm1', key: 'not-a-real-key' };
 var cfgO = { provider: 'local', baseUrl: 'http://localhost:11434/v1', model: 'm2', key: '' };
 check('settings check names what is missing', M.problem({ provider: 'openai', baseUrl: 'x', model: 'y', key: '' }) === 'Enter your API key.' && M.problem(cfgO) === '');
 var tools = M.toolDefs(ABS.workspaces.examples.shop.good());
 var rqA = M.buildRequest(cfgA, 'SYS', [{ role: 'user', content: 'hi' }], tools);
-check('Anthropic request: url, browser header, system and tools', rqA.url === 'https://api.anthropic.com/v1/messages' && rqA.headers['x-api-key'] === 'sk-test' &&
+check('Anthropic request: url, browser header, system and tools', rqA.url === 'https://api.anthropic.com/v1/messages' && rqA.headers['x-api-key'] === 'not-a-real-key' &&
   rqA.headers['anthropic-dangerous-direct-browser-access'] === 'true' && rqA.body.system === 'SYS' && rqA.body.tools.length === 3 && rqA.body.tools[0].input_schema.required[0] === 'order_id');
 var rqO = M.buildRequest(cfgO, 'SYS', [{ role: 'user', content: 'hi' }], []);
 check('OpenAI-style request: system first, no tools field when none are on, no auth header without a key',
   rqO.url === 'http://localhost:11434/v1/chat/completions' && rqO.body.messages[0].role === 'system' && !('tools' in rqO.body) && !rqO.headers.authorization);
-check('the key is never in the request body', JSON.stringify(rqA.body).indexOf('sk-test') < 0);
+check('the key is never in the request body', JSON.stringify(rqA.body).indexOf('not-a-real-key') < 0);
 check('tools that are off are not offered', M.toolDefs(ABS.workspaces.examples.shop.broken()).map(function (t) { return t.name; }).indexOf('price_lookup') < 0);
 var pO = M.parseResponse(cfgO, { choices: [{ message: { content: null, tool_calls: [{ id: 'c1', type: 'function', 'function': { name: 'order_lookup', arguments: '{"order_id":"ORD-9001"}' } }] } }] });
 check('OpenAI tool calls are parsed', pO.calls.length === 1 && pO.calls[0].args.order_id === 'ORD-9001' && pO.text === '');
@@ -132,7 +132,7 @@ var pending = M.respond(wsR, 'Where is ORD-9001?', cfgA, fakeFetch(log)).then(fu
   return ABS.grader.runAllAsync(wsR, function (w, q) { return Promise.resolve(ABS.sim.respond(w, q)); });
 }).then(function (r) {
   check('runAllAsync with the simulator gives the same score as runAll', r.pct === ABS.grader.runAll(wsR).pct);
-  check('export never includes model settings', ABS.store.toJSON({ exampleId: 'shop', ws: wsR, prices: {}, model: { key: 'sk-test' } }).indexOf('sk-test') < 0);
+  check('export never includes model settings', ABS.store.toJSON({ exampleId: 'shop', ws: wsR, prices: {}, model: { key: 'not-a-real-key' } }).indexOf('not-a-real-key') < 0);
 });
 
 pending.then(function () {

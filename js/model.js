@@ -32,7 +32,7 @@
     if (t.orders) {
       out.push({ name: 'order_lookup', description: 'Look up one order by its id, like ORD-1234. Returns the item, price and how many days ago it was placed.',
         params: { order_id: 'The order id, like ORD-1234' } });
-      out.push({ name: 'request_refund', description: 'Ask to refund an order. Store code checks the refund rules and returns the decision. This is the only way to issue a refund.',
+      out.push({ name: 'request_refund', description: 'Ask to refund an order. Store code looks up the order, checks the refund rules and returns the decision. This is the only way to issue a refund.',
         params: { order_id: 'The order id, like ORD-1234' } });
     }
     if (t.prices) {
@@ -135,7 +135,7 @@
     }
     if (call.name === 'request_refund' && tools.orders) {
       var r = order();
-      step('Tools', 'Your model called request_refund("' + id + '").');
+      step('Tools', 'Your model called request_refund("' + id + '"). The tool reads the order record itself, which counts as an order lookup: ' + (r ? 'found.' : 'no such order.'));
       if (!r) { step('Guardrails', 'No such order, so there is nothing to refund.'); return JSON.stringify({ decision: 'refused', reason: 'no order with that id' }); }
       var days = U.num(r.daysAgo, 0), price = U.num(r.price, 0), win = U.num(rules.refundDays, 30), lim = U.num(rules.refundLimit, 150);
       var res;
@@ -230,7 +230,9 @@
         step('Model', 'Your model asked for ' + r.calls.length + ' tool call(s).');
         var results = r.calls.map(function (c) {
           var out = runTool(ws, c, step);
-          if (out !== 'error: tool not available' && toolsCalled.indexOf(c.name) < 0) toolsCalled.push(c.name);
+          if (out !== 'error: tool not available') {
+            (c.name === 'request_refund' ? ['order_lookup', c.name] : [c.name]).forEach(function (n) { if (toolsCalled.indexOf(n) < 0) toolsCalled.push(n); });
+          }
           folder.tools.push({ name: c.name, args: JSON.stringify(c.args), result: out });
           return { id: c.id, result: out };
         });
