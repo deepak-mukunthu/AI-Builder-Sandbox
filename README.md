@@ -1,5 +1,7 @@
 # AI Builder Sandbox
 
+> **This project has moved.** The Sandbox is now one screen of the [AI Builder Lab](https://github.com/deepak-mukunthu/AI-Builder-Lab), together with the ShopBot lab. The book *Learn AI by Building* uses the lab. Download it from the lab's Releases page (book-edition-1), unzip it, double-click `index.html`, and click **Sandbox** in the menu. This repository is archived and no longer updated.
+
 A small, no-install sandbox that goes with the book *Learn AI by Building*. You configure a tiny assistant using forms, ask it questions, and see how the parts around a model change the answers.
 
 It is a **simulator**. The "model" is a set of fixed, documented rules, not a real language model. That is on purpose: the same settings and the same question always give the same answer, so you can change one thing and know that the change caused the difference.
